@@ -583,7 +583,12 @@ impl EnvFilter {
         // that to allow changing the filter while a span is already entered.
         // But that might be much less efficient...
         if let Some(span) = try_lock!(self.by_id.read()).get(id) {
-            self.scope.get_or_default().borrow_mut().push(span.level());
+            // Only push to scope if this span actually enables events.
+            // For spans with field value matchers, this checks if the values matched.
+            // For spans with only name matchers, this always succeeds.
+            if let Some(level) = span.enables_events() {
+                self.scope.get_or_default().borrow_mut().push(level);
+            }
         }
     }
 
@@ -593,8 +598,12 @@ impl EnvFilter {
     /// [`Filter::on_exit`] methods on `EnvFilter`'s implementations of those
     /// traits, but it does not require the trait to be in scope.
     pub fn on_exit<S>(&self, id: &span::Id, _: Context<'_, S>) {
-        if self.cares_about_span(id) {
-            self.scope.get_or_default().borrow_mut().pop();
+        // Only pop from scope if we pushed a level in on_enter.
+        // This means checking both that we care about the span AND that it enables events.
+        if let Some(span) = try_lock!(self.by_id.read()).get(id) {
+            if span.enables_events().is_some() {
+                self.scope.get_or_default().borrow_mut().pop();
+            }
         }
     }
 

@@ -472,6 +472,27 @@ impl SpanMatcher {
             .unwrap_or(self.base_level)
     }
 
+    /// Returns the level that should be enabled for events within this span,
+    /// or `None` if this span should not enable any events.
+    ///
+    /// This is different from `level()` in that it correctly handles the case
+    /// where field value matchers exist but didn't match - in that case, this
+    /// returns `None` instead of falling back to `base_level`.
+    pub(crate) fn enables_events(&self) -> Option<LevelFilter> {
+        // If we have field matchers, check if any matched
+        if !self.field_matches.is_empty() {
+            // Return the max level of matched fields, or None if nothing matched
+            self.field_matches
+                .iter()
+                .filter_map(field::SpanMatch::filter)
+                .max()
+        } else {
+            // No field matchers - this is a span-name-only directive
+            // Always enable at base_level
+            Some(self.base_level)
+        }
+    }
+
     pub(crate) fn record_update(&self, record: &span::Record<'_>) {
         for m in &self.field_matches {
             record.record(&mut m.visitor())
